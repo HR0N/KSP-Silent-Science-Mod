@@ -39,8 +39,10 @@ namespace SilentScienceMod
                 return;
             }
 
-            var biome = ScienceUtil.GetExperimentSituation(vessel) != ExperimentSituations.SrfLanded
-    ? "" : ScienceUtil.GetBiomedisplayName(vessel.mainBody, ScienceUtil.GetExperimentBiome(vessel.mainBody, vessel.latitude, vessel.longitude));
+            string biome = expSit != ExperimentSituations.SrfLanded
+                ? ""
+                : ScienceUtil.GetBiomedisplayName(vessel.mainBody, ScienceUtil.GetExperimentBiome(vessel.mainBody, vessel.latitude, vessel.longitude));
+
             var subject = ResearchAndDevelopment.GetExperimentSubject(
                 experiment.experiment,
                 expSit,
@@ -55,36 +57,63 @@ namespace SilentScienceMod
                 return;
             }
 
-            // Отладка для проверки subject.id
-            Debug.Log($"[SilentScienceMod] subject.id type: {subject.id.GetType()} | value: {subject.id}");
-
-            // Рассчитываем объем научных данных
             float scienceAmount = experiment.experiment.baseValue * experiment.experiment.dataScale * subject.subjectValue;
 
-            // Отладка конструкторов ScienceData
-            foreach (var ctor in typeof(ScienceData).GetConstructors())
-            {
-                Debug.Log($"[SilentScienceMod] ScienceData constructor: {ctor}");
-            }
-
-            // Создаем объект ScienceData (пробуем стандартный конструктор)
             ScienceData data = new ScienceData(
-                scienceAmount,           // Объем научных данных
-                experiment.xmitDataScalar, // Множитель передачи
-                0f,                      // Лабораторный множитель (float)
-                subject.id.ToString(),   // ID эксперимента (преобразуем в строку)
-                subject.title            // Заголовок эксперимента
+                scienceAmount,
+                experiment.xmitDataScalar,
+                0f,
+                subject.id,
+                subject.title
             );
 
-            // Сохраняем данные в эксперимент
             experiment.ReturnData(data);
-
-            // Устанавливаем статус эксперимента
             experiment.Deployed = true;
             experiment.Inoperable = !experiment.rerunnable;
 
             Debug.Log($"[SilentScienceMod] Science collected silently: {subject.title} | {scienceAmount} science");
             ScreenMessages.PostScreenMessage($"Silent experiment complete: {subject.title}", 3f, ScreenMessageStyle.UPPER_CENTER);
+
+            HandleAnimation(); // <- вызов анимации
+        }
+
+        private void HandleAnimation()
+        {
+            string internalName = part.partInfo?.name ?? part.name;
+            internalName = internalName.Replace("(Clone)", "").Trim();
+
+            // 1. Раскрытие deployable-модулей (Magnetometer Boom)
+            var deployable = part.FindModuleImplementing<ModuleDeployablePart>();
+            if (deployable != null)
+            {
+                Debug.Log($"[SilentScienceMod] ModuleDeployablePart found on part: {internalName} | anim: {deployable.animationName} | state: {deployable.deployState}");
+
+                if (internalName == "Magnetometer")
+                {
+                    if (deployable.deployState == ModuleDeployablePart.DeployState.RETRACTED)
+                    {
+                        deployable.Extend();
+                        Debug.Log("[SilentScienceMod] Extend() called on Magnetometer Boom.");
+                    }
+                    else
+                    {
+                        Debug.Log("[SilentScienceMod] Magnetometer Boom already extended or in motion.");
+                    }
+                }
+            }
+
+            // 2. Обработка анимаций (Goo, Science Jr.) — кроме Mk2 Lander Can
+            foreach (var anim in part.FindModulesImplementing<ModuleAnimateGeneric>())
+            {
+                if (internalName == "mk2LanderCabin" && anim.animationName == "Mk2Doors")
+                {
+                    Debug.Log("[SilentScienceMod] Skipping Mk2Doors animation on mk2LanderCabin.");
+                    continue;
+                }
+
+                anim.Toggle();
+                Debug.Log($"[SilentScienceMod] Animation toggled: {anim.animationName}");
+            }
         }
     }
 
